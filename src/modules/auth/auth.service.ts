@@ -1,27 +1,29 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
-import { AuthLoginDto } from "../DTOs/auth/authLogin.dto";
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { JwtService } from "@nestjs/jwt";
-import { UserService } from "../services/user.service";
+import { UsersService } from '../users/users.service';
+import { LoginDto } from './dto/login.dto';
+import { JwtPayload } from './jwt.strategy';
 
 @Injectable()
 export class AuthService {
-    constructor(private readonly userService: UserService, private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+  ) {}
 
-    async login(authLoginDto: AuthLoginDto) {
-        const user = await this.userService.findByEmailForAuth(authLoginDto.email);
-
-        if (!user) {
-            throw new UnauthorizedException('Email ou senha inválidos');
-        }
-        const isPasswordValid = await bcrypt.compare(authLoginDto.password, user.password);
-        if (!isPasswordValid) {
-            throw new UnauthorizedException('Email ou senha inválidos');
-        }
-
-        const payload = { sub: user.id, email: user.email, name: user.name };
-        return {
-            access_token: this.jwtService.sign(payload),
-        }
+  async login({ email, password }: LoginDto) {
+    const user = await this.usersService.findByEmailWithPassword(email);
+    const isValid = user && (await bcrypt.compare(password, user.password));
+    if (!isValid) {
+      throw new UnauthorizedException('E-mail ou senha inválidos.');
     }
+
+    const payload: JwtPayload = {
+      sub: user.id,
+      email: user.email,
+      name: user.name,
+    };
+    return { access_token: await this.jwtService.signAsync(payload) };
+  }
 }

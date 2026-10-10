@@ -1,87 +1,123 @@
 # Base de Conhecimento API
 
-API desenvolvida para gerenciar uma **Base de Conhecimento**, permitindo a criação e organização de artigos, categorias, tags e gerenciamento de usuários.
+API da minha base de conhecimento pessoal: artigos/aulas em **Markdown**, organizados por **categorias**, **tags** e **séries**, com **busca full-text** em português e um **timer Pomodoro** com estatísticas de estudo. As aulas podem ser geradas por um workflow do **n8n** e chegam via webhook como rascunho para revisão.
 
-## 🚀 Tecnologias Utilizadas
+Por enquanto é **monousuário**. Não há cadastro público: o único usuário é criado por um script (`npm run seed:admin`), e todas as rotas exigem login, exceto `/auth/login`, `/health` e o webhook do n8n (que usa chave de API).
 
-Este projeto foi desenvolvido utilizando as seguintes tecnologias:
+## Tecnologias
 
-- [NestJS](https://nestjs.com/) (Framework Node.js)
-- [TypeScript](https://www.typescriptlang.org/)
-- [TypeORM](https://typeorm.io/) (Mapeamento Objeto-Relacional)
-- [PostgreSQL](https://www.postgresql.org/) (Banco de Dados)
-- [Swagger](https://swagger.io/) (Documentação da API)
-- Autenticação JWT com Passport
-- Bcrypt para hash de senhas
+- [NestJS 11](https://nestjs.com/) + TypeScript (modo `strict`)
+- [TypeORM](https://typeorm.io/) + [PostgreSQL](https://www.postgresql.org/) (migrations, sem `synchronize`)
+- JWT (Passport) + bcrypt
+- Swagger, helmet, rate limit no login (`@nestjs/throttler`)
+- Jest
 
----
+## Estrutura
 
-## 🗂️ Estrutura de Rotas (Endpoints)
-
-A API possui os seguintes módulos e rotas principais (disponíveis via Swagger):
-
-- **`/auth`**: Autenticação (Login) e geração de token JWT.
-- **`/users`**: Gerenciamento de usuários (criação, listagem, atualização e exclusão).
-- **`/articles`**: Gerenciamento de artigos da base de conhecimento.
-- **`/categories`**: Gerenciamento das categorias dos artigos.
-- **`/tags`**: Gerenciamento de tags para facilitar a busca de artigos.
-- **`/likes`**: Sistema de "curtidas" ou avaliações de artigos.
-- **`/suggestions`**: Sugestões enviadas pelos usuários sobre os artigos.
-- **`/macros`**: Gerenciamento de macros/respostas rápidas.
-
----
-
-## ⚙️ Pré-requisitos
-
-Para rodar o projeto localmente, você precisará ter instalado:
-
-- [Node.js](https://nodejs.org/) (versão 18+ recomendada)
-- [NPM](https://www.npmjs.com/) ou [Yarn](https://yarnpkg.com/)
-- Banco de Dados PostgreSQL (Local ou em Nuvem, como o Neon.tech)
-
----
-
-## 🛠️ Configuração do Ambiente
-
-Crie um arquivo `.env` na raiz do projeto, baseando-se nas variáveis abaixo:
-
-```env
-JWT_SECRET="seu_jwt_secret_super_seguro"
-DB_HOST="localhost"
-DB_PORT=5432
-DB_USER="seu_usuario_pg"
-DB_NAME="nome_do_banco"
-DB_PASSWORD="sua_senha"
-PGSSLMODE="require" # Use require se for um banco em nuvem que exija SSL
+```
+src/
+  common/        # decorators (@Public, @CurrentUser), guard JWT global, filtro de erros, paginação, slugify
+  config/        # validação das variáveis de ambiente
+  database/      # data-source, migrations, seeds
+  modules/
+    auth/        # POST /auth/login
+    users/       # /users/me
+    articles/    # /articles
+    categories/  # /categories
+    tags/        # /tags
+    integrations/n8n/  # POST /integrations/n8n/lessons (webhook)
+    pomodoro/    # /pomodoro (configurações, sessões, estatísticas)
+    health/      # GET /health
 ```
 
----
+## Endpoints
 
-## 🏃‍♂️ Como rodar o projeto
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/auth/login` | Retorna `access_token` (limite de 5 tentativas/min) |
+| GET / PATCH | `/users/me` | Ver/editar nome e e-mail |
+| PATCH | `/users/me/password` | Trocar senha (exige a atual) |
+| GET | `/articles` | Lista paginada. Filtros: `search`, `categoryId`, `tag` (slug), `series`, `source` (`manual`/`n8n`), `status` (`published`/`draft`), `page`, `limit` |
+| GET | `/articles/:id` · `/articles/slug/:slug` | Detalhe com categoria e tags |
+| POST / PATCH / DELETE | `/articles[/:id]` | CRUD. `slug` é gerado do título se omitido; `tagIds` define as tags |
+| CRUD | `/categories`, `/tags` | `slug` gerado do nome se omitido. Categoria com artigos não pode ser excluída (409) |
+| POST | `/integrations/n8n/lessons` | Webhook do n8n (header `X-API-Key`). Ver abaixo |
+| GET / PATCH | `/pomodoro/settings` | Durações de foco/pausas, ciclos até a pausa longa, auto-start, fuso horário |
+| POST | `/pomodoro/sessions` | Registra um bloco encerrado (`focus`, `short_break`, `long_break`), concluído ou não |
+| GET / DELETE | `/pomodoro/sessions[/:id]` | Histórico paginado (`from`, `to`) / apagar registro |
+| GET | `/pomodoro/stats?days=7` | Foco por dia, total do período, "hoje" e aulas mais estudadas |
+| GET | `/health` | Verifica a conexão com o banco |
 
-1. Clone o repositório e instale as dependências:
-   ```bash
-   npm install
-   ```
+A busca usa `websearch_to_tsquery('portuguese', ...)`, então aceita `"frase exata"`, `-palavra` e `OR`, e os resultados vêm ordenados por relevância.
 
-2. (Opcional) Execute as migrations para criar as tabelas no banco de dados, caso já existam migrations configuradas:
-   ```bash
-   npm run migration:run
-   ```
+Documentação interativa: **http://localhost:3000/api**. Use o botão *Authorize* com o token do login.
 
-3. Inicie o servidor de desenvolvimento:
-   ```bash
-   npm run start:dev
-   ```
+## Integração com n8n
 
-O servidor estará rodando em `http://localhost:3000`.
+Quando o workflow termina de gerar uma aula, ele envia para a API, que salva como **rascunho**. Você revisa e publica com `PATCH /articles/:id` (`{ "isPublished": true }`).
 
----
+1. Gere uma chave e coloque em `N8N_API_KEY` no `.env` (mínimo de 32 caracteres). Sem ela, o webhook responde 503.
+2. No n8n, adicione um nó **HTTP Request** no fim do workflow:
+   - **Method:** `POST`
+   - **URL:** `https://<sua-api>/integrations/n8n/lessons`
+   - **Header:** `X-API-Key: <N8N_API_KEY>` (de preferência via credencial *Header Auth*)
+   - **Body (JSON):**
 
-## 📚 Documentação da API (Swagger)
+```json
+{
+  "externalId": "{{ $json.slug_do_assunto }}",
+  "title": "Entendendo JOINs no SQL",
+  "content": {{ JSON.stringify($json.conteudo_markdown) }},
+  "category": "Banco de Dados",
+  "tags": ["sql", "postgres"],
+  "series": "SQL do zero",
+  "seriesPosition": 3,
+  "metadata": { "workflowId": "{{ $workflow.id }}", "executionId": "{{ $execution.id }}" }
+}
+```
 
-A documentação interativa da API está configurada com Swagger. Com o servidor rodando, acesse no navegador:
+> **Dica:** o Markdown tem quebras de linha e aspas, que quebram o JSON se forem interpoladas direto (`"{{ $json.x }}"`). Use `{{ JSON.stringify(...) }}` sem aspas em volta, como no `content` acima, ou monte o body com a opção *Using Fields Below* do nó.
 
-👉 **[http://localhost:3000/api](http://localhost:3000/api)**
+Regras:
+- `category` e `tags` vão **por nome**; as que não existirem são criadas.
+- `externalId` identifica a aula. Reenviar o mesmo ID (ex.: retry do n8n) **atualiza** o rascunho em vez de duplicar. Use algo estável, como o slug do assunto. Não use o ID da execução, que muda a cada vez.
+- Se a aula já foi **publicada**, a API responde `409` e não sobrescreve sua versão revisada.
+- `series` e `seriesPosition` são opcionais e servem para agrupar aulas de um curso (`GET /articles?series=SQL do zero` lista em ordem).
+- Respostas: `201` (criada) ou `200` (atualizada), com `{ status, id, slug, isPublished }`.
 
-Lá você encontrará todos os *endpoints* detalhados, os esquemas de requisição/resposta e poderá testar as rotas diretamente pela interface.
+## Pomodoro
+
+O timer roda no **front**, que é quem conta o tempo. A API guarda as configurações e o histórico:
+
+1. Ao abrir o timer, o front lê `GET /pomodoro/settings` (criado com 25/5/15 min e 4 ciclos no primeiro acesso).
+2. Ao fim de cada bloco, concluído, pulado ou interrompido, o front envia `POST /pomodoro/sessions` com `startedAt`, `endedAt`, `plannedSeconds`, `completed` e, opcionalmente, o `articleId` da aula estudada.
+3. "Ciclos concluídos hoje" vem de `GET /pomodoro/stats` (`today.completedSessions`). O "hoje" usa o `timezone` das configurações.
+
+## Rodando localmente
+
+Pré-requisitos: Node.js 20+ e PostgreSQL. Com Docker, basta `docker compose up -d`.
+
+```bash
+npm install
+cp .env.example .env          # preencha JWT_SECRET e ADMIN_*
+npm run migration:run
+npm run seed:admin            # cria seu usuário (rodar de novo redefine a senha)
+npm run start:dev
+```
+
+### Variáveis de ambiente
+
+Veja `.env.example`. A aplicação não sobe se faltar alguma obrigatória. Em bancos na nuvem (Neon etc.) use `DB_SSL=true`.
+
+## Scripts
+
+| Script | O que faz |
+|---|---|
+| `start:dev` | Servidor com hot reload |
+| `build` / `start:prod` | Compila e roda o build |
+| `test` / `test:cov` | Testes unitários |
+| `lint` / `lint:check` | ESLint (com/sem `--fix`) |
+| `format` | Prettier |
+| `migration:generate -- src/database/migrations/<nome>` | Gera migration a partir das entidades |
+| `migration:run` / `migration:revert` | Aplica / desfaz a última migration |
+| `seed:admin` | Cria ou atualiza o usuário dono da base |

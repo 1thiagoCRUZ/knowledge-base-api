@@ -1,33 +1,39 @@
-import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
-import { TypeOrmModule } from "@nestjs/typeorm";
-import { dataSourceOptions } from './database/config/db';
-import { ArticleModule } from "./modules/article.module";
-import { UsersModule } from "./modules/user.module";
-import { TagModule } from "./modules/tag.module";
-import { SuggestionModule } from "./modules/suggestion.module";
-import { MacroModule } from "./modules/macro.module";
-import { InteractionsModule } from "./modules/interactions.module";
-import { CategoryModule } from "./modules/category.module";
-import { JwtModule } from "@nestjs/jwt";
-import { AuthModule } from "./modules/auth/auth.module";
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { validateEnv } from './config/env.validation';
+import { dataSourceOptions } from './database/data-source';
+import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { TypeOrmExceptionFilter } from './common/filters/typeorm-exception.filter';
+import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
+import { ArticlesModule } from './modules/articles/articles.module';
+import { CategoriesModule } from './modules/categories/categories.module';
+import { TagsModule } from './modules/tags/tags.module';
+import { N8nModule } from './modules/integrations/n8n/n8n.module';
+import { PomodoroModule } from './modules/pomodoro/pomodoro.module';
+import { HealthController } from './modules/health/health.controller';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true
-    }),
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
     TypeOrmModule.forRoot(dataSourceOptions),
-    ArticleModule,
-    UsersModule,
-    TagModule,
+    // Limites aplicados só onde há @UseGuards(ThrottlerGuard) (ex.: login).
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
     AuthModule,
-    SuggestionModule,
-    MacroModule,
-    JwtModule,
-    InteractionsModule,
-    CategoryModule
+    UsersModule,
+    ArticlesModule,
+    CategoriesModule,
+    TagsModule,
+    N8nModule,
+    PomodoroModule,
+  ],
+  controllers: [HealthController],
+  providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_FILTER, useClass: TypeOrmExceptionFilter },
   ],
 })
-
 export class AppModule {}
