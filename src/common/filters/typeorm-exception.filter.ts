@@ -10,8 +10,9 @@ import { QueryFailedError } from 'typeorm';
 
 const PG_UNIQUE_VIOLATION = '23505';
 const PG_FOREIGN_KEY_VIOLATION = '23503';
+const PG_NOT_NULL_VIOLATION = '23502';
 
-/** Converte erros de constraint do Postgres em respostas 409 em vez de 500. */
+/** Converte erros de constraint do Postgres em respostas 4xx em vez de 500. */
 @Catch(QueryFailedError)
 export class TypeOrmExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(TypeOrmExceptionFilter.name);
@@ -34,6 +35,17 @@ export class TypeOrmExceptionFilter implements ExceptionFilter {
         message:
           'Operação viola um relacionamento (registro em uso ou referência inexistente).',
         error: 'Conflict',
+      });
+    }
+
+    if (code === PG_NOT_NULL_VIOLATION) {
+      const column = (exception.driverError as { column?: string }).column;
+      return response.status(HttpStatus.BAD_REQUEST).json({
+        statusCode: HttpStatus.BAD_REQUEST,
+        message: column
+          ? `O campo "${column}" não pode ser nulo.`
+          : 'Campo obrigatório não pode ser nulo.',
+        error: 'Bad Request',
       });
     }
 

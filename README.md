@@ -1,6 +1,6 @@
 # Base de Conhecimento API
 
-API da minha base de conhecimento pessoal: artigos/aulas em **Markdown**, organizados por **categorias**, **tags** e **séries**, com **busca full-text** em português e um **timer Pomodoro** com estatísticas de estudo. As aulas podem ser geradas por um workflow do **n8n** e chegam via webhook como rascunho para revisão.
+API da minha base de conhecimento pessoal: artigos/aulas em **Markdown**, organizados por **categorias**, **tags** e **séries**, com **busca full-text** em português uma **Tabela de Estudos** (planos divididos em tópicos) e um **timer Pomodoro** com estatísticas de estudo. As aulas podem ser geradas por um workflow do **n8n** e chegam via webhook como rascunho para revisão.
 
 Por enquanto é **monousuário**. Não há cadastro público: o único usuário é criado por um script (`npm run seed:admin`), e todas as rotas exigem login, exceto `/auth/login`, `/health` e o webhook do n8n (que usa chave de API).
 
@@ -27,6 +27,7 @@ src/
     tags/        # /tags
     integrations/n8n/  # POST /integrations/n8n/lessons (webhook)
     pomodoro/    # /pomodoro (configurações, sessões, estatísticas)
+    study-plans/ # /study-plans (Tabela de Estudos)
     health/      # GET /health
 ```
 
@@ -42,6 +43,11 @@ src/
 | POST / PATCH / DELETE | `/articles[/:id]` | CRUD. `slug` é gerado do título se omitido; `tagIds` define as tags |
 | CRUD | `/categories`, `/tags` | `slug` gerado do nome se omitido. Categoria com artigos não pode ser excluída (409) |
 | POST | `/integrations/n8n/lessons` | Webhook do n8n (header `X-API-Key`). Ver abaixo |
+| GET / POST | `/study-plans` | Lista os planos com progresso / cria um plano (já pode vir com `topics`) |
+| GET / PATCH / DELETE | `/study-plans/:id` | Plano com progresso e tópicos na ordem / editar / excluir |
+| POST | `/study-plans/:id/topics` | Adiciona tópicos ao fim (`{ "topics": [...] }`) |
+| PATCH / DELETE | `/study-plans/:id/topics/:topicId` | Edita uma linha (status, prioridade, módulo, carga horária, aula vinculada) / remove |
+| PUT | `/study-plans/:id/topics/order` | Reordena (`{ "topicIds": [...] }` com todos os IDs, na nova ordem) |
 | GET / PATCH | `/pomodoro/settings` | Durações de foco/pausas, ciclos até a pausa longa, auto-start, fuso horário |
 | POST | `/pomodoro/sessions` | Registra um bloco encerrado (`focus`, `short_break`, `long_break`), concluído ou não |
 | GET / DELETE | `/pomodoro/sessions[/:id]` | Histórico paginado (`from`, `to`) / apagar registro |
@@ -84,6 +90,22 @@ Regras:
 - Se a aula já foi **publicada**, a API responde `409` e não sobrescreve sua versão revisada.
 - `series` e `seriesPosition` são opcionais e servem para agrupar aulas de um curso (`GET /articles?series=SQL do zero` lista em ordem).
 - Respostas: `201` (criada) ou `200` (atualizada), com `{ status, id, slug, isPublished }`.
+
+## Tabela de Estudos
+
+Cada **plano** (ex.: "SQL do zero") tem **tópicos**, que são as linhas da tabela:
+
+| Campo | Valores |
+|---|---|
+| `title` | Nome do tópico |
+| `module` | Texto livre para agrupar (ex.: "Módulo 2 — Consultas") |
+| `status` | `todo`, `in_progress`, `done`. Ao virar `done`, `completedAt` é preenchido |
+| `priority` | `low`, `medium`, `high` |
+| `estimatedMinutes` | Carga horária em **minutos**; o front converte para horas |
+| `articleId` | Aula vinculada ao tópico (`null` desvincula) |
+| `notes` | Anotações |
+
+Na edição (`PATCH`), campos opcionais aceitam `null` para limpar. O plano retorna `progress` com total de tópicos, concluídos, em andamento, minutos totais e concluídos, e percentual.
 
 ## Pomodoro
 

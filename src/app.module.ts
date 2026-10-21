@@ -14,6 +14,7 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { TagsModule } from './modules/tags/tags.module';
 import { N8nModule } from './modules/integrations/n8n/n8n.module';
 import { PomodoroModule } from './modules/pomodoro/pomodoro.module';
+import { StudyPlansModule } from './modules/study-plans/study-plans.module';
 import { HealthController } from './modules/health/health.controller';
 
 @Module({
@@ -29,6 +30,7 @@ import { HealthController } from './modules/health/health.controller';
     TagsModule,
     N8nModule,
     PomodoroModule,
+    StudyPlansModule,
   ],
   controllers: [HealthController],
   providers: [
