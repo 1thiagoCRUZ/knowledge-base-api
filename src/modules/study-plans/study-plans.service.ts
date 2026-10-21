@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { instanceToPlain } from 'class-transformer';
 import { EntityManager, Repository } from 'typeorm';
 import { Article } from '../articles/article.entity';
 import { ArticlesService } from '../articles/articles.service';
@@ -93,10 +94,12 @@ export class StudyPlansService {
       relations: { topics: true },
       order: { updatedAt: 'DESC' },
     });
-    return plans.map(({ topics, ...plan }) => ({
-      ...plan,
-      progress: summarizeTopics(topics),
-    }));
+    return plans.map((plan) => {
+      // instanceToPlain antes do spread para respeitar o @Exclude() de userId.
+      const fields = instanceToPlain(plan);
+      delete fields.topics;
+      return { ...fields, progress: summarizeTopics(plan.topics) };
+    });
   }
 
   async findOne(userId: number, id: number) {
@@ -115,12 +118,16 @@ export class StudyPlansService {
       .addOrderBy('topic.id', 'ASC')
       .getMany();
 
-    return { ...plan, progress: summarizeTopics(topics), topics };
+    return {
+      ...instanceToPlain(plan),
+      progress: summarizeTopics(topics),
+      topics,
+    };
   }
 
   async create(userId: number, dto: CreateStudyPlanDto) {
     const topics = dto.topics ?? [];
-    await this.assertArticlesExist(topics);
+    await this.assertArticlesOwned(userId, topics);
 
     const planId = await this.plansRepository.manager.transaction(
       async (manager) => {
@@ -162,7 +169,7 @@ export class StudyPlansService {
   /** Adiciona tópicos ao fim da tabela. */
   async addTopics(userId: number, planId: number, dto: AddStudyTopicsDto) {
     await this.findOwnedPlan(userId, planId);
-    await this.assertArticlesExist(dto.topics);
+    await this.assertArticlesOwned(userId, dto.topics);
 
     const { max } = (await this.topicsRepository
       .createQueryBuilder('topic')
@@ -186,7 +193,7 @@ export class StudyPlansService {
     const topic = await this.findOwnedTopic(userId, planId, topicId);
 
     if (dto.articleId !== undefined && dto.articleId !== null) {
-      await this.articlesService.findOne(dto.articleId);
+      await this.articlesService.assertOwned(userId, dto.articleId);
     }
 
     const { status, ...fields } = dto;
@@ -311,7 +318,9 @@ export class StudyPlansService {
     await manager.save(entities);
   }
 
-  private async assertArticlesExist(
+  /** Impede vincular a um tópico a aula de outro usuário. */
+  private async assertArticlesOwned(
+    userId: number,
     topics: Pick<CreateStudyTopicDto, 'articleId'>[],
   ): Promise<void> {
     const ids = new Set(
@@ -320,7 +329,7 @@ export class StudyPlansService {
         .filter((id): id is number => id !== undefined),
     );
     for (const id of ids) {
-      await this.articlesService.findOne(id);
+      await this.articlesService.assertOwned(userId, id);
     }
   }
 }

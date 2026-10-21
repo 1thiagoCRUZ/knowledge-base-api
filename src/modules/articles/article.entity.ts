@@ -1,3 +1,4 @@
+import { Exclude } from 'class-transformer';
 import {
   Column,
   CreateDateColumn,
@@ -26,13 +27,14 @@ export const ARTICLE_SOURCES = ['manual', 'n8n'] as const;
 export type ArticleSource = (typeof ARTICLE_SOURCES)[number];
 
 @Entity()
-@Unique(['slug'])
-@Unique(['source', 'externalId'])
+@Unique(['userId', 'slug'])
+@Unique(['userId', 'source', 'externalId'])
 @Index('IDX_article_search', { synchronize: false })
 export class Article {
   @PrimaryGeneratedColumn()
   id: number;
 
+  @Exclude({ toPlainOnly: true })
   @Index('IDX_article_userId')
   @Column()
   userId: number;

@@ -1,3 +1,4 @@
+import { Exclude } from 'class-transformer';
 import {
   Column,
   CreateDateColumn,
@@ -18,6 +19,7 @@ export class StudyPlan {
   @PrimaryGeneratedColumn({ primaryKeyConstraintName: 'PK_study_plan' })
   id: number;
 
+  @Exclude({ toPlainOnly: true })
   @Index('IDX_study_plan_userId')
   @Column()
   userId: number;

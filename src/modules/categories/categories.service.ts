@@ -12,6 +12,7 @@ import { Category } from './category.entity';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
+/** Todas as operações são restritas às categorias do próprio usuário. */
 @Injectable()
 export class CategoriesService {
   constructor(
@@ -21,48 +22,59 @@ export class CategoriesService {
     private readonly articlesRepository: Repository<Article>,
   ) {}
 
-  create(dto: CreateCategoryDto): Promise<Category> {
+  create(userId: number, dto: CreateCategoryDto): Promise<Category> {
     const category = this.categoriesRepository.create({
       ...dto,
+      userId,
       slug: this.resolveSlug(dto.slug, dto.name),
     });
     return this.categoriesRepository.save(category);
   }
 
-  findAll(): Promise<Category[]> {
-    return this.categoriesRepository.find({ order: { name: 'ASC' } });
+  findAll(userId: number): Promise<Category[]> {
+    return this.categoriesRepository.find({
+      where: { userId },
+      order: { name: 'ASC' },
+    });
   }
 
   /** Busca a categoria pelo slug do nome, criando-a se não existir. */
-  async findOrCreateByName(name: string): Promise<Category> {
+  async findOrCreateByName(userId: number, name: string): Promise<Category> {
     const slug = this.resolveSlug(undefined, name);
     await this.categoriesRepository
       .createQueryBuilder()
       .insert()
-      .values({ name: name.trim(), slug })
+      .values({ userId, name: name.trim(), slug })
       .orIgnore()
       .execute();
-    return this.categoriesRepository.findOneByOrFail({ slug });
+    return this.categoriesRepository.findOneByOrFail({ userId, slug });
   }
 
-  async findOne(id: number): Promise<Category> {
-    const category = await this.categoriesRepository.findOneBy({ id });
+  async findOne(userId: number, id: number): Promise<Category> {
+    const category = await this.categoriesRepository.findOneBy({ id, userId });
     if (!category) {
       throw new NotFoundException(`Categoria ${id} não encontrada.`);
     }
     return category;
   }
 
-  async findBySlug(slug: string): Promise<Category> {
-    const category = await this.categoriesRepository.findOneBy({ slug });
+  async findBySlug(userId: number, slug: string): Promise<Category> {
+    const category = await this.categoriesRepository.findOneBy({
+      slug,
+      userId,
+    });
     if (!category) {
       throw new NotFoundException(`Categoria "${slug}" não encontrada.`);
     }
     return category;
   }
 
-  async update(id: number, dto: UpdateCategoryDto): Promise<Category> {
-    const category = await this.findOne(id);
+  async update(
+    userId: number,
+    id: number,
+    dto: UpdateCategoryDto,
+  ): Promise<Category> {
+    const category = await this.findOne(userId, id);
     Object.assign(category, dto);
     if (dto.slug !== undefined) {
       category.slug = this.resolveSlug(dto.slug, category.name);
@@ -70,17 +82,18 @@ export class CategoriesService {
     return this.categoriesRepository.save(category);
   }
 
-  async remove(id: number): Promise<void> {
-    await this.findOne(id);
+  async remove(userId: number, id: number): Promise<void> {
+    await this.findOne(userId, id);
     const articleCount = await this.articlesRepository.countBy({
       categoryId: id,
+      userId,
     });
     if (articleCount > 0) {
       throw new ConflictException(
         `Categoria possui ${articleCount} artigo(s). Mova-os antes de excluir.`,
       );
     }
-    await this.categoriesRepository.delete(id);
+    await this.categoriesRepository.delete({ id, userId });
   }
 
   private resolveSlug(slug: string | undefined, name: string): string {

@@ -64,7 +64,7 @@ describe('StudyPlansService', () => {
     save: jest.Mock<Promise<void>, [StudyTopic]>;
     manager: { transaction: jest.Mock };
   };
-  let articles: { findOne: jest.Mock };
+  let articles: { assertOwned: jest.Mock };
 
   beforeEach(() => {
     plans = {
@@ -76,7 +76,7 @@ describe('StudyPlansService', () => {
       save: jest.fn<Promise<void>, [StudyTopic]>(),
       manager: { transaction: jest.fn() },
     };
-    articles = { findOne: jest.fn() };
+    articles = { assertOwned: jest.fn() };
     service = new StudyPlansService(
       plans as unknown as Repository<StudyPlan>,
       topics as unknown as Repository<StudyTopic>,
@@ -166,9 +166,17 @@ describe('StudyPlansService', () => {
       expect(saved.title).toBe('JOINs');
     });
 
-    it('troca a aula vinculada validando que ela existe', async () => {
+    it('não vincula aula de outro usuário', async () => {
+      articles.assertOwned.mockRejectedValue(new NotFoundException());
+      await expect(
+        service.updateTopic(7, 1, 5, { articleId: 42 }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(topics.save).not.toHaveBeenCalled();
+    });
+
+    it('troca a aula vinculada validando que ela é do usuário', async () => {
       await service.updateTopic(7, 1, 5, { articleId: 8 });
-      expect(articles.findOne).toHaveBeenCalledWith(8);
+      expect(articles.assertOwned).toHaveBeenCalledWith(7, 8);
       const saved = topics.save.mock.calls[0][0];
       expect(saved.articleId).toBe(8);
       expect(saved.article).toEqual({ id: 8 });
@@ -176,7 +184,7 @@ describe('StudyPlansService', () => {
 
     it('desvincula a aula com null', async () => {
       await service.updateTopic(7, 1, 5, { articleId: null });
-      expect(articles.findOne).not.toHaveBeenCalled();
+      expect(articles.assertOwned).not.toHaveBeenCalled();
       const saved = topics.save.mock.calls[0][0];
       expect(saved.articleId).toBeNull();
       expect(saved.article).toBeNull();

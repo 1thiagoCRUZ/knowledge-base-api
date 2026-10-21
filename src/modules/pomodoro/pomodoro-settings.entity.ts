@@ -1,3 +1,4 @@
+import { Exclude } from 'class-transformer';
 import {
   Column,
   Entity,
@@ -13,6 +14,7 @@ export const DEFAULT_TIMEZONE = 'America/Sao_Paulo';
 /** Configurações do timer (uma linha por usuário). */
 @Entity('pomodoro_settings')
 export class PomodoroSettings {
+  @Exclude({ toPlainOnly: true })
   @PrimaryColumn({ primaryKeyConstraintName: 'PK_pomodoro_settings' })
   userId: number;
 

@@ -52,6 +52,7 @@ export function applyPublishState(
 }
 
 @Injectable()
+/** Todas as operações são restritas às aulas do próprio usuário (404 para as de outros). */
 export class ArticlesService {
   constructor(
     @InjectRepository(Article)
@@ -60,9 +61,9 @@ export class ArticlesService {
     private readonly tagsService: TagsService,
   ) {}
 
-  async create(dto: CreateArticleDto, userId: number): Promise<Article> {
-    await this.categoriesService.findOne(dto.categoryId);
-    const tags = await this.tagsService.findByIds(dto.tagIds ?? []);
+  async create(userId: number, dto: CreateArticleDto): Promise<Article> {
+    await this.categoriesService.findOne(userId, dto.categoryId);
+    const tags = await this.tagsService.findByIds(userId, dto.tagIds ?? []);
 
     const article = this.articlesRepository.create({
       title: dto.title,
@@ -70,7 +71,7 @@ export class ArticlesService {
       categoryId: dto.categoryId,
       userId,
       tags,
-      slug: dto.slug ?? (await this.generateUniqueSlug(dto.title)),
+      slug: dto.slug ?? (await this.generateUniqueSlug(userId, dto.title)),
       series: dto.series ?? null,
       seriesPosition: dto.seriesPosition ?? null,
       source: 'manual',
@@ -80,7 +81,7 @@ export class ArticlesService {
     applyPublishState(article, dto.isPublished ?? false);
 
     const saved = await this.articlesRepository.save(article);
-    return this.findOne(saved.id);
+    return this.findOne(userId, saved.id);
   }
 
   /**
@@ -92,7 +93,11 @@ export class ArticlesService {
     input: ExternalArticleInput,
   ): Promise<{ article: Article; created: boolean }> {
     const existing = await this.articlesRepository.findOne({
-      where: { source: input.source, externalId: input.externalId },
+      where: {
+        userId: input.userId,
+        source: input.source,
+        externalId: input.externalId,
+      },
       relations: { category: true, tags: true },
     });
 
@@ -108,7 +113,7 @@ export class ArticlesService {
         source: input.source,
         externalId: input.externalId,
         userId: input.userId,
-        slug: await this.generateUniqueSlug(input.title),
+        slug: await this.generateUniqueSlug(input.userId, input.title),
         isPublished: false,
         publishedAt: null,
       });
@@ -123,11 +128,19 @@ export class ArticlesService {
     article.metadata = input.metadata ?? null;
 
     const saved = await this.articlesRepository.save(article);
-    return { article: await this.findOne(saved.id), created: !existing };
+    return {
+      article: await this.findOne(input.userId, saved.id),
+      created: !existing,
+    };
   }
 
-  async findAll(query: ListArticlesQueryDto): Promise<Paginated<Article>> {
-    const qb = this.articlesRepository.createQueryBuilder('article');
+  async findAll(
+    userId: number,
+    query: ListArticlesQueryDto,
+  ): Promise<Paginated<Article>> {
+    const qb = this.articlesRepository
+      .createQueryBuilder('article')
+      .where('article.userId = :userId', { userId });
 
     if (query.categoryId !== undefined) {
       qb.andWhere('article.categoryId = :categoryId', {
@@ -179,7 +192,7 @@ export class ArticlesService {
 
     const articles = ids.length
       ? await this.articlesRepository.find({
-          where: { id: In(ids) },
+          where: { id: In(ids), userId },
           relations: { category: true, tags: true },
         })
       : [];
@@ -191,9 +204,9 @@ export class ArticlesService {
     return paginate(ordered, total, query);
   }
 
-  async findOne(id: number): Promise<Article> {
+  async findOne(userId: number, id: number): Promise<Article> {
     const article = await this.articlesRepository.findOne({
-      where: { id },
+      where: { id, userId },
       relations: { category: true, tags: true },
     });
     if (!article) {
@@ -202,9 +215,20 @@ export class ArticlesService {
     return article;
   }
 
-  async findBySlug(slug: string): Promise<Article> {
+  /**
+   * Garante que a aula existe e é do usuário, sem carregar o conteúdo.
+   * Use ao receber um `articleId` dentro do corpo de outra requisição.
+   */
+  async assertOwned(userId: number, id: number): Promise<void> {
+    const exists = await this.articlesRepository.existsBy({ id, userId });
+    if (!exists) {
+      throw new NotFoundException(`Artigo ${id} não encontrado.`);
+    }
+  }
+
+  async findBySlug(userId: number, slug: string): Promise<Article> {
     const article = await this.articlesRepository.findOne({
-      where: { slug },
+      where: { slug, userId },
       relations: { category: true, tags: true },
     });
     if (!article) {
@@ -213,17 +237,21 @@ export class ArticlesService {
     return article;
   }
 
-  async update(id: number, dto: UpdateArticleDto): Promise<Article> {
-    const article = await this.findOne(id);
+  async update(
+    userId: number,
+    id: number,
+    dto: UpdateArticleDto,
+  ): Promise<Article> {
+    const article = await this.findOne(userId, id);
 
     if (dto.categoryId !== undefined && dto.categoryId !== article.categoryId) {
-      await this.categoriesService.findOne(dto.categoryId);
+      await this.categoriesService.findOne(userId, dto.categoryId);
       article.categoryId = dto.categoryId;
       // Sem isso o TypeORM usaria a relação carregada e ignoraria o novo categoryId.
       article.category = { id: dto.categoryId } as Article['category'];
     }
     if (dto.tagIds !== undefined) {
-      article.tags = await this.tagsService.findByIds(dto.tagIds);
+      article.tags = await this.tagsService.findByIds(userId, dto.tagIds);
     }
     if (dto.title !== undefined) {
       article.title = dto.title;
@@ -246,15 +274,18 @@ export class ArticlesService {
     }
 
     await this.articlesRepository.save(article);
-    return this.findOne(id);
+    return this.findOne(userId, id);
   }
 
-  async remove(id: number): Promise<void> {
-    await this.findOne(id);
-    await this.articlesRepository.delete(id);
+  async remove(userId: number, id: number): Promise<void> {
+    await this.assertOwned(userId, id);
+    await this.articlesRepository.delete({ id, userId });
   }
 
-  private async generateUniqueSlug(title: string): Promise<string> {
+  private async generateUniqueSlug(
+    userId: number,
+    title: string,
+  ): Promise<string> {
     const base = slugify(title);
     if (!base) {
       throw new BadRequestException(
@@ -265,6 +296,7 @@ export class ArticlesService {
     let candidate = base;
     for (let suffix = 2; ; suffix++) {
       const exists = await this.articlesRepository.existsBy({
+        userId,
         slug: candidate,
       });
       if (!exists) {

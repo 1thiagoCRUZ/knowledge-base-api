@@ -15,10 +15,11 @@ export class N8nService {
   ) {}
 
   async receiveLesson(dto: N8nLessonDto) {
-    const [owner, category, tags] = await Promise.all([
-      this.usersService.findOwner(),
-      this.categoriesService.findOrCreateByName(dto.category),
-      this.tagsService.findOrCreateByNames(dto.tags ?? []),
+    // A chave do n8n ainda é única; as aulas vão para o dono da base.
+    const owner = await this.usersService.findOwner();
+    const [category, tags] = await Promise.all([
+      this.categoriesService.findOrCreateByName(owner.id, dto.category),
+      this.tagsService.findOrCreateByNames(owner.id, dto.tags ?? []),
     ]);
 
     const { article, created } = await this.articlesService.upsertExternal({

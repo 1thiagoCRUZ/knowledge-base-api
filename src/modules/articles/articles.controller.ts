@@ -30,32 +30,48 @@ export class ArticlesController {
     @Body() dto: CreateArticleDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.articlesService.create(dto, user.id);
+    return this.articlesService.create(user.id, dto);
   }
 
   @Get()
-  findAll(@Query() query: ListArticlesQueryDto) {
-    return this.articlesService.findAll(query);
+  findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListArticlesQueryDto,
+  ) {
+    return this.articlesService.findAll(user.id, query);
   }
 
   @Get('slug/:slug')
-  findBySlug(@Param('slug') slug: string) {
-    return this.articlesService.findBySlug(slug);
+  findBySlug(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('slug') slug: string,
+  ) {
+    return this.articlesService.findBySlug(user.id, slug);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.articlesService.findOne(id);
+  findOne(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.articlesService.findOne(user.id, id);
   }
 
   @Patch(':id')
-  update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateArticleDto) {
-    return this.articlesService.update(id, dto);
+  update(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateArticleDto,
+  ) {
+    return this.articlesService.update(user.id, id, dto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.articlesService.remove(id);
+  remove(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.articlesService.remove(user.id, id);
   }
 }

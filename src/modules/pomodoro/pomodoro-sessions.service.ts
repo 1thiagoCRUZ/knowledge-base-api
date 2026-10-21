@@ -76,7 +76,7 @@ export class PomodoroSessionsService {
     const durationSeconds = computeSessionDuration(startedAt, endedAt);
 
     if (dto.articleId !== undefined) {
-      await this.articlesService.findOne(dto.articleId);
+      await this.articlesService.assertOwned(userId, dto.articleId);
     }
 
     const session = this.sessionsRepository.create({
@@ -153,7 +153,7 @@ export class PomodoroSessionsService {
       `SELECT a.id, a.title, a.slug,
               SUM(s."durationSeconds")::int AS "focusSeconds"
          FROM pomodoro_session s
-         JOIN article a ON a.id = s."articleId"
+         JOIN article a ON a.id = s."articleId" AND a."userId" = s."userId"
         WHERE s."userId" = $1
           AND s.type = 'focus'
           AND (s."startedAt" AT TIME ZONE $2)::date

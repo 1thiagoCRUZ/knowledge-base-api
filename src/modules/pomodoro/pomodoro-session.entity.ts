@@ -1,3 +1,4 @@
+import { Exclude } from 'class-transformer';
 import {
   Column,
   CreateDateColumn,
@@ -27,6 +28,7 @@ export class PomodoroSession {
   @PrimaryGeneratedColumn({ primaryKeyConstraintName: 'PK_pomodoro_session' })
   id: number;
 
+  @Exclude({ toPlainOnly: true })
   @Column()
   userId: number;
 

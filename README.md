@@ -115,6 +115,16 @@ O timer roda no **front**, que é quem conta o tempo. A API guarda as configura�
 2. Ao fim de cada bloco, concluído, pulado ou interrompido, o front envia `POST /pomodoro/sessions` com `startedAt`, `endedAt`, `plannedSeconds`, `completed` e, opcionalmente, o `articleId` da aula estudada.
 3. "Ciclos concluídos hoje" vem de `GET /pomodoro/stats` (`today.completedSessions`). O "hoje" usa o `timezone` das configurações.
 
+## Isolamento por usuário (IDOR)
+
+Por enquanto só há um usuário, mas o código já está pronto para vários. Ao criar uma feature nova, siga a mesma convenção:
+
+- Toda tabela com dono tem `userId`. Métodos de service recebem `userId` como **primeiro parâmetro**.
+- O filtro de dono vai **na própria consulta** (`where: { id, userId }`), nunca como uma checagem depois de buscar. Recurso de outro usuário responde **404**, sem revelar que existe.
+- IDs que chegam **dentro do corpo** (ex.: `articleId` num tópico ou numa sessão) são validados com `ArticlesService.assertOwned(userId, id)`.
+- Slugs e IDs externos são únicos **por usuário**: `(userId, slug)`.
+- `userId` é removido das respostas com `@Exclude()` e o `ClassSerializerInterceptor` global. Se for montar a resposta com spread de uma entidade, use `instanceToPlain()` antes.
+
 ## Rodando localmente
 
 Pré-requisitos: Node.js 20+ e PostgreSQL. Com Docker, basta `docker compose up -d`.
